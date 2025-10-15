@@ -1,0 +1,19 @@
+{
+  "name": "strict-rag-chatbot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "ingest": "node ingest-pdf.mjs",
+    "start": "node server.mjs"
+  },
+  "dependen cies": {
+    "@supabase/supabase-js": "^2.75.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "openai": "^6.3.0",
+    "pdf-parse": "^2.3.0",
+    "unpdf": "^1.3.2",
+    "zod": "^4.1.12"
+  }
+}

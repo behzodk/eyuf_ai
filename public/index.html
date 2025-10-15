@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PDF RAG Chatbot</title>
+  <style>
+    :root{
+      --bg:#0b0c10;--panel:#121318;--card:#171821;--text:#e9eaf0;--muted:#9aa0a6;
+      --accent:#7c5cff;--accent-2:#09f;--border:#262737;--success:#12b886;--danger:#ef5350;--shadow:0 12px 32px rgba(0,0,0,.35)
+    }
+    @media (prefers-color-scheme: light){
+      :root{--bg:#f8fafc;--panel:#fff;--card:#fff;--text:#111827;--muted:#6b7280;--border:#e5e7eb;--shadow:0 12px 32px rgba(0,0,0,.08)}
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:32px;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);
+      background:radial-gradient(1200px 800px at 80% -10%, rgba(124,92,255,.25), transparent 60%),
+                 radial-gradient(800px 600px at -10% 110%, rgba(0,153,255,.25), transparent 60%),
+                 var(--bg);
+      min-height:100svh}
+    h1{margin:0 0 8px;font-size:20px}.hint{color:var(--muted);margin-bottom:22px}
+    #pdfbot{position:fixed;right:24px;bottom:24px;z-index:50}
+    #toggle{display:flex;align-items:center;gap:8px;padding:12px 16px;border:0;border-radius:999px;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:var(--shadow);cursor:pointer;transition:transform .18s}
+    #toggle:active{transform:scale(.98)}
+    #panel{display:none;width:360px;height:520px;margin-top:10px;background:var(--panel);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;transform-origin:90% 100%;animation:popIn .28s cubic-bezier(.2,.8,.2,1)}
+    @keyframes popIn{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    .head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+    .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 6px rgba(124,92,255,.15)}
+    .title{font-weight:600}.status{color:var(--muted);font-size:12px}
+    .bar{height:3px;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+    .log{height:calc(520px - 56px - 56px - 3px);overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;
+      background:radial-gradient(600px 400px at 30% 0%, rgba(124,92,255,.06), transparent 60%),
+                 radial-gradient(500px 300px at 90% 110%, rgba(0,153,255,.06), transparent 60%),
+                 transparent}
+    .row{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+    #q{flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:12px;outline:0;background:var(--card);color:var(--text)}
+    #send,#stop{padding:10px 12px;border:0;border-radius:12px;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent-2))}
+    #stop{display:none;background:linear-gradient(135deg,#ef5350,#f78b7a)}
+    .bubble{max-width:78%;padding:10px 12px;border-radius:14px;box-shadow:var(--shadow);background:var(--card);border:1px solid var(--border);opacity:0;transform:translateY(6px);animation:fadeIn .2s forwards}
+    .me{margin-left:auto;border-bottom-right-radius:6px;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),var(--card)}
+    .bot{margin-right:auto;border-bottom-left-radius:6px}
+    @keyframes fadeIn{to{opacity:1;transform:none}}
+    .sources{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);color:var(--muted);font-size:12px}
+    .sources ul{margin:6px 0 0 16px;padding:0}
+    .thinking{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+    .dot3{width:6px;height:6px;border-radius:50%;background:var(--muted);opacity:.6;animation:bounce 1.2s infinite ease-in-out}
+    .dot3:nth-child(2){animation-delay:.15s}.dot3:nth-child(3){animation-delay:.30s}
+    @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
+    .skeleton{width:70%;height:58px;border-radius:12px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.12),rgba(255,255,255,.04));background-size:280% 100%;animation:shimmer 1.2s linear infinite;border:1px solid var(--border)}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-40% 0}}
+    @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 12px;background:#111;color:#fff;border-radius:10px;box-shadow:var(--shadow);display:none;font-size:13px}
+  </style>
+</head>
+<body>
+  <h1>Ask about the “Basic Profile” PDF</h1>
+  <div class="hint">Answers are strictly grounded in your embedded PDF.</div>
+
+  <div id="pdfbot">
+    <button id="toggle" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9 9.1 9.1 0 0 0 3.2 6.9V21l3.1-1.7A9.8 9.8 0 0 0 12 21a9 9 0 0 0 0-18Z" stroke="white" stroke-width="1.5"/></svg>
+      Chat
+    </button>
+
+    <section id="panel" role="dialog" aria-modal="true" aria-labelledby="chatTitle" aria-busy="false">
+      <div class="head">
+        <span class="dot"></span>
+        <div>
+          <div id="chatTitle" class="title">PDF Support</div>
+          <div class="status" id="status">Online</div>
+        </div>
+      </div>
+      <div class="bar" id="bar"></div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <div class="row">
+        <input id="q" placeholder="Ask about the Basic Profile…" autocomplete="off" />
+        <button id="stop" title="Stop">Stop</button>
+        <button id="send">Send</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    const toggle = $('#toggle'), panel = $('#panel'), log = $('#log'), q = $('#q');
+    const send = $('#send'), stopBtn = $('#stop'), statusEl = $('#status'), bar = $('#bar');
+    const toast = $('#toast');
+    let es = null; // EventSource instance
+
+    // Toast helper
+    function showToast(msg){ toast.textContent = msg; toast.style.display='block'; setTimeout(()=> toast.style.display='none', 2200); }
+
+    // Toggle chat
+    toggle.onclick = () => {
+      const open = panel.style.display !== 'none' && panel.style.display !== '';
+      panel.style.display = open ? 'none' : 'block';
+      toggle.setAttribute('aria-expanded', String(!open));
+      if (!open) q.focus();
+    };
+
+    // Bubbles
+    function bubble(html, who='bot'){
+      const div = document.createElement('div');
+      div.className = `bubble ${who === 'you' ? 'me' : 'bot'}`;
+      div.innerHTML = html;
+      log.appendChild(div);
+      div.scrollIntoView({behavior:'smooth', block:'end'});
+      return div;
+    }
+    function bubbleSkeleton(){
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble bot';
+      const sk = document.createElement('div'); sk.className = 'skeleton';
+      wrap.appendChild(sk); log.appendChild(wrap); wrap.scrollIntoView({behavior:'smooth', block:'end'}); return wrap;
+    }
+    function thinkingBubble(){
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble bot';
+      wrap.innerHTML = `<span class="thinking"><span class="dot3"></span><span class="dot3"></span><span class="dot3"></span> Thinking…</span>`;
+      log.appendChild(wrap); wrap.scrollIntoView({behavior:'smooth', block:'end'}); return wrap;
+    }
+
+    // Busy state
+    function setBusy(busy){
+      panel.setAttribute('aria-busy', String(busy));
+      statusEl.textContent = busy ? 'Thinking…' : 'Online';
+      bar.style.transition = 'none'; bar.style.width = busy ? '15%' : '0%';
+      if (busy) requestAnimationFrame(()=>{ bar.style.transition='width .8s ease'; bar.style.width='85%'; });
+      send.disabled = busy; stopBtn.style.display = busy ? 'inline-block' : 'none';
+    }
+
+    function appendText(node, text){
+      node.appendChild(document.createTextNode(text));
+    }
+
+    function pipeStream(question, botDiv){
+      // close prior stream
+      if (es) { try { es.close(); } catch {} es = null; }
+
+      const url = `/api/chat/stream?question=${encodeURIComponent(question)}`;
+      es = new EventSource(url);
+
+      es.addEventListener("delta", (e) => {
+        appendText(botDiv, e.data); // safe text append
+        botDiv.scrollIntoView({behavior:'smooth', block:'end'});
+      });
+
+      es.addEventListener("citations", (e) => {
+        try {
+          const cites = JSON.parse(e.data);
+          const html = (cites||[]).map(c=>`<li>Snippet ${c.snippet} — ${c.path}</li>`).join('');
+          if (html) botDiv.innerHTML += `<div class="sources"><strong>Sources</strong><ul>${html}</ul></div>`;
+        } catch {}
+      });
+
+      es.addEventListener("warning", (e) => console.warn("Grounding warning:", e.data));
+
+      es.addEventListener("replace", (e) => {
+        try {
+          const { answer, citations } = JSON.parse(e.data);
+          botDiv.textContent = answer; // replace with safe text
+          if (citations?.length) {
+            const html = citations.map(c=>`<li>Snippet ${c.snippet} — ${c.path}</li>`).join('');
+            botDiv.innerHTML += `<div class="sources"><strong>Sources</strong><ul>${html}</ul></div>`;
+          }
+        } catch {}
+      });
+
+      es.addEventListener("error", () => {
+        showToast("Connection error");
+        es.close(); es = null; setBusy(false); bar.style.width='0%';
+      });
+
+      es.addEventListener("done", () => { es.close(); es = null; setBusy(false); bar.style.width='100%'; setTimeout(()=>bar.style.width='0%', 400); });
+    }
+
+    async function ask(){
+      const question = q.value.trim(); if (!question) return;
+      if (panel.style.display === 'none' || panel.style.display === '') { panel.style.display='block'; toggle.setAttribute('aria-expanded','true'); }
+      bubble(question, 'you'); q.value='';
+
+      setBusy(true);
+      const skel = bubbleSkeleton();
+      const typing = thinkingBubble();
+
+      try{
+        const botDiv = bubble("", "bot"); // stream into this
+        skel.remove(); typing.remove();
+        pipeStream(question, botDiv);
+      }catch{
+        skel.remove(); typing.remove(); setBusy(false);
+        bubble(`<span style="color:var(--danger)">Error: please try again.</span>`, 'bot');
+      }
+    }
+
+    send.onclick = ask;
+    q.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') ask(); });
+    stopBtn.onclick = ()=> { if (es) { es.close(); es = null; setBusy(false); bar.style.width='0%'; } };
+  </script>
+</body>
+</html>
